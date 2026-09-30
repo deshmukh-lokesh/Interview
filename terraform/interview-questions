@@ -1,0 +1,247 @@
+BASIC:
+
+Q1. What is Terraform, and what problem does it solve?
+A1. An open-source Infrastructure as Code (IaC) tool by HashiCorp. It lets you define, provision, and manage cloud and on-prem infrastructure using declarative configuration files. It solves manual provisioning, inconsistency, and lack of version control for infrastructure.
+
+Q2. What is Infrastructure as Code (IaC)?
+A2. Managing infrastructure through code instead of manual processes. Benefits: repeatability, version control, automation, consistency, and easier collaboration.
+
+Q3. What language does Terraform use?
+A3. HCL (HashiCorp Configuration Language). JSON is also supported.
+
+Q4. What are providers?
+A4. Plugins that let Terraform talk to platform APIs such as AWS, Azure, GCP, Kubernetes, GitHub.
+    provider "aws" {
+      region = "us-east-1"
+    }
+
+Q5. Difference between init, plan, apply, destroy?
+A5. init    -> downloads providers/modules, initializes backend
+    plan    -> shows what changes will be made (dry run)
+    apply   -> executes the changes
+    destroy -> removes all managed infrastructure
+
+Q6. What is a resource block? Give an example.
+A6. It declares an infrastructure object to create/manage.
+    resource "aws_instance" "web" {
+      ami           = "ami-0abcdef123"
+      instance_type = "t3.micro"
+    }
+    Syntax: resource "<type>" "<local_name>" { ... }
+
+Q7. What are variables and outputs?
+A7. Variables = inputs that parameterize configuration.
+    Outputs   = values exposed after apply (e.g., IP address) for users or other modules.
+    variable "region" { default = "us-east-1" }
+    output "instance_ip" { value = aws_instance.web.public_ip }
+
+Q8. What is the Terraform state file?
+A8. terraform.tfstate is a JSON file mapping your config to real-world resources. Terraform uses it to track metadata, compute diffs, and improve performance. It can contain sensitive data, so protect it.
+
+Q9. terraform.tfvars vs variables.tf?
+A9. variables.tf   -> DECLARES variables (name, type, default, description)
+    terraform.tfvars -> ASSIGNS values to those variables
+
+Q10. What do terraform fmt and terraform validate do?
+A10. fmt      -> formats code to canonical style
+     validate -> checks syntax and internal consistency (no cloud calls)
+
+
+INTERMEDIATE:
+
+Q11. Data sources vs resources?
+A11. Resources create/manage infrastructure. Data sources only READ existing information (latest AMI, existing VPC) without managing it.
+     data "aws_ami" "latest" {
+       most_recent = true
+       owners      = ["amazon"]
+     }
+
+Q12. What are modules and why use them?
+A12. Reusable, self-contained packages of Terraform configuration. They promote DRY code, standardization, and easier maintenance. Every config has at least a root module.
+
+Q13. What is a remote backend and why is it needed?
+A13. Stores state remotely (S3, Azure Blob, GCS, Terraform Cloud) instead of locally. Enables team collaboration, locking, encryption, versioning, and safer state handling.
+
+Q14. What is state locking?
+A14. Prevents concurrent operations from corrupting state. Example: S3 backend with a DynamoDB table (newer versions also support S3-native locking).
+
+Q15. count vs for_each?
+A15. count    -> creates N copies indexed by number. Removing a middle item shifts indexes and can cause recreation.
+     for_each -> iterates over a map/set with stable string keys. Safer for changes.
+
+Q16. Implicit vs explicit dependencies?
+A16. Implicit -> created automatically when one resource references another's attribute.
+     Explicit -> depends_on = [aws_s3_bucket.b], used when a hidden dependency can't be inferred.
+
+Q17. What are workspaces?
+A17. Multiple state files for the same configuration (dev, prod).
+     Commands: terraform workspace new / select / list
+     Good for simple cases. For strongly isolated environments, separate directories/state are preferred.
+
+Q18. What are provisioners and why discouraged?
+A18. They run scripts on resources after creation (local-exec, remote-exec). Discouraged because they are imperative, not tracked in state, and hard to reason about. Prefer user_data, cloud-init, Packer, or config management tools.
+
+Q19. What is the lifecycle block? Name its arguments.
+A19. Customizes resource behavior:
+     - create_before_destroy
+     - prevent_destroy
+     - ignore_changes
+     - replace_triggered_by
+     - precondition / postcondition
+
+Q20. Locals vs variables?
+A20. Variables = external inputs.
+     Locals    = internal computed values to avoid repetition within a module.
+     locals { name_prefix = "${var.env}-app" }
+
+
+ADVANCED:
+Q21. How do you import existing infrastructure?
+A21. Classic: terraform import aws_instance.web i-1234567890
+     Modern (v1.5+): use an import block in config, then run
+     terraform plan -generate-config-out=generated.tf
+     to auto-generate resource code. Run plan to confirm there is no diff.
+
+Q22. How do you handle secrets in Terraform?
+A22. - Mark variables sensitive = true (hides from CLI output, but still stored in state)
+     - Use a secrets manager (AWS Secrets Manager, Vault, Key Vault) via data sources
+     - Encrypt and restrict access to the remote state backend
+     - Never commit secrets or .tfvars containing secrets to Git
+     - Newer versions offer ephemeral values/resources to keep secrets out of state
+
+Q23. What is state drift and how do you fix it?
+A23. Drift = real infrastructure differs from state/config due to manual changes.
+     Detect: terraform plan  or  terraform plan -refresh-only
+     Fix: apply to revert to config, or update config (or apply -refresh-only) to accept the change.
+     Prevent: restrict console access, run scheduled drift-detection pipelines.
+
+Q24. Explain taint / -replace.
+A24. Forces a resource to be destroyed and recreated. taint is deprecated; use:
+     terraform apply -replace="aws_instance.web"
+     Use when a resource is in a bad state or needs a rebuild.
+
+Q25. How do you rename/move resources without destroying them?
+A25. terraform state mv aws_instance.old aws_instance.new
+     Preferred (v1.1+), declarative moved block:
+     moved {
+       from = aws_instance.old
+       to   = aws_instance.new
+     }
+
+Q26. How do you structure code for dev/stage/prod?
+A26. - Separate directories per environment (envs/dev, envs/prod), each calling shared modules with different tfvars and separate backends/state (best isolation)
+     - Workspaces (lighter, but shared code and backend config)
+     - Terragrunt to reduce duplication
+     Keep separate state and credentials per environment.
+
+Q27. What are dynamic blocks?
+A27. Generate repeated nested blocks from a collection.
+     dynamic "ingress" {
+       for_each = var.ports
+       content {
+         from_port   = ingress.value
+         to_port     = ingress.value
+         protocol    = "tcp"
+         cidr_blocks = ["0.0.0.0/0"]
+       }
+     }
+
+Q28. How do you run Terraform in CI/CD?
+A28. Pipeline: fmt -check -> validate -> lint/security scan (tflint, tfsec/Checkov) -> plan (saved with -out=tfplan, posted on PR) -> manual approval -> apply tfplan on merge.
+     Use remote state with locking, OIDC or short-lived credentials, and separate pipelines per environment.
+
+Q29. How do you version modules and pin provider versions?
+A29. terraform {
+       required_version = ">= 1.5.0"
+       required_providers {
+         aws = { source = "hashicorp/aws", version = "~> 5.0" }
+       }
+     }
+     - Commit .terraform.lock.hcl
+     - Publish modules via Git tags (semver) or a registry, and reference with version = "1.2.0"
+
+Q30. Scenario: manual change in console, or state lost/corrupted. How do you recover?
+A30. Manual change: run terraform plan to see drift, then revert via apply or update code to match.
+     Lost/corrupted state:
+       1. Restore from remote backend versioning (e.g., S3 versioning) or a backup
+       2. If unavailable, rebuild state with terraform import (or import blocks) for each resource
+       3. Run plan until there is no diff
+       4. Prevent recurrence: remote backend, versioning, locking, restricted access
+
+
+
+SCENARIO-BASED:
+Q31. Terraform plan shows a resource will be destroyed and recreated, but you didn't intend that. What do you do?
+A31. 1. Read the plan output: look for "# forces replacement" next to the changed argument.
+     2. Identify the cause (immutable argument changed, renamed resource, changed count/for_each key).
+     3. Fix options:
+        - Revert the change to the argument
+        - Use a moved block / terraform state mv if it was a rename
+        - Use lifecycle { ignore_changes = [...] } if the change is external/harmless
+        - Use create_before_destroy if replacement is unavoidable and downtime matters
+     4. Never apply until the plan matches your intent.
+
+Q32. Two engineers run terraform apply at the same time. What happens?
+A32. With a remote backend that supports locking (S3 + DynamoDB or S3-native locking, Terraform Cloud, etc.), the second run fails with a "state lock" error until the first finishes.
+     If a lock is stuck (crashed pipeline): terraform force-unlock <LOCK_ID>
+     Only use force-unlock after confirming no run is actually in progress.
+
+Q33. You want Terraform to stop managing a resource but NOT destroy it. How?
+A33. Option 1: terraform state rm aws_instance.web
+     Option 2 (v1.7+): removed block
+       removed {
+         from = aws_instance.web
+         lifecycle {
+           destroy = false
+         }
+       }
+     Then delete the resource block from your code.
+
+Q34. A secret (DB password) ended up in the state file. What now?
+A34. - Restrict and audit access to the state backend (encryption, IAM, versioning)
+     - Rotate the exposed secret immediately
+     - Avoid recurrence: generate/fetch secrets outside Terraform, or use ephemeral values/write-only arguments (newer versions), or let the service manage the secret (e.g., manage_master_user_password on RDS)
+     - Remember: sensitive = true only hides CLI output, not state contents
+
+Q35. A provider upgrade breaks your plan. How do you handle it safely?
+A35. - Pin versions ("~> 5.0") and commit .terraform.lock.hcl
+     - Read the provider changelog / upgrade guide
+     - Upgrade in dev first: terraform init -upgrade, then plan
+     - Fix deprecated arguments, then roll out to stage and prod
+     - Rollback: revert the lock file and version constraint, run terraform init
+
+Q36. Your state file is huge and plans take 20+ minutes. What do you do?
+A36. - Split into smaller states by layer or domain (network, database, app), each with its own backend key
+     - Share data between states using outputs + terraform_remote_state or data sources
+     - Use -target only for emergencies, not as a routine workflow
+     - Use -refresh=false or -parallelism tuning carefully when appropriate
+     - Move resources between states using state mv or import/removed blocks
+
+Q37. How do you share values (like VPC ID) between two separate Terraform configurations?
+A37. Option 1: terraform_remote_state data source reading the other state's outputs
+       data "terraform_remote_state" "network" {
+         backend = "s3"
+         config = { bucket = "my-state", key = "network/terraform.tfstate", region = "us-east-1" }
+       }
+       vpc_id = data.terraform_remote_state.network.outputs.vpc_id
+     Option 2 (often preferred, less coupling): look it up with data sources (tags/filters) or store values in SSM Parameter Store / a registry.
+
+Q38. terraform apply fails halfway through. What is the state of your infrastructure?
+A38. Terraform saves state for resources successfully created, so the infra is partially applied (not rolled back; Terraform has no automatic rollback).
+     Steps: read the error, fix the cause (permissions, quota, invalid value), and re-run plan/apply. Terraform will continue from where it left off.
+     If a resource was created but not recorded (rare, e.g., crash), use terraform import.
+
+Q39. You must update a shared module used by 30 teams. How do you do it safely?
+A39. - Use semantic versioning and Git tags / registry versions
+     - Teams pin versions (version = "~> 2.1"), so nothing changes until they upgrade
+     - Avoid breaking changes in minor/patch releases; document breaking changes in a CHANGELOG and major bump
+     - Use moved blocks inside the module so renames don't destroy resources
+     - Add automated tests (terraform test, Terratest) and examples/ folder
+     - Roll out gradually: dev -> stage -> prod
+
+Q40. How do you enforce security and compliance policies on Terraform code?
+A40. - Static scanning in CI: tflint, tfsec/Trivy, Checkov
+     - Policy as code: Sentinel (Terraform Cloud/Enterprise) or OPA/Conftest against the JSON plan (terraform show -json tfplan)
+     - Use lifecycle preconditions/postconditions and variable validation blocks
+     - Restrict who can apply (CI-only applies, least-privilege roles)
+     - Required approvals on pull requests and protected branches
