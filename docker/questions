@@ -1,0 +1,5 @@
+What happens internally when you execute the following command?
+docker run nginx
+Ans--> client -> deamon -->check image --> pull image --> create container --> set network --> start process
+
+
