@@ -4,19 +4,8 @@
 
 # Architecture
 
-Docker follows a Client-Server Architecture.
+<img width="1000" height="382" alt="image" src="https://github.com/user-attachments/assets/746f6717-e55e-4f18-9fff-c4991ffdb69c" />
 
-```text
-Docker Client
-     |
-     v
-Docker Daemon
-     |
-     v
-Images -> Containers -> Networks -> Volumes
-```
-
----
 
 # Dockerfile Workflow
 
